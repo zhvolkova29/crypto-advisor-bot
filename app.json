@@ -1,0 +1,26 @@
+{
+  "name": "crypto-advisor-bot",
+  "description": "Telegram bot for cryptocurrency recommendations",
+  "repository": "https://github.com/yourusername/crypto-advisor-bot",
+  "keywords": ["python", "telegram", "crypto", "bot"],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "Your Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "CHAT_ID": {
+      "description": "Your Telegram Chat ID",
+      "required": true
+    },
+    "COINGECKO_API_KEY": {
+      "description": "CoinGecko API Key (optional)",
+      "required": false
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
+
