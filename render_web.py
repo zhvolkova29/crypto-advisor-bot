@@ -205,8 +205,15 @@ async def start_bot():
 
 # Запускаем бота при старте приложения
 if __name__ == "__main__":
-    # Запускаем бота в фоне
-    asyncio.create_task(start_bot())
+    # Запускаем бота в отдельном потоке
+    import threading
+    
+    def run_bot():
+        asyncio.run(start_bot())
+    
+    # Запускаем бота в фоновом потоке
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     
     # Запускаем Flask приложение
     port = int(os.environ.get('PORT', 5000))
