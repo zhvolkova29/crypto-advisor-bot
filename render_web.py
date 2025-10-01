@@ -204,17 +204,24 @@ async def start_bot():
         await asyncio.sleep(60)  # Проверяем каждую минуту
 
 # Запускаем бота при старте приложения
-if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
+def _start_background_bot_thread():
+    """Запуск фонового потока с event loop (совместимо с gunicorn)."""
     import threading
-    
+
     def run_bot():
         asyncio.run(start_bot())
-    
-    # Запускаем бота в фоновом потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Запускаем Flask приложение
+
+    thread = threading.Thread(target=run_bot, daemon=True)
+    thread.start()
+
+
+# Gunicorn хук: вызывается при инициализации приложения в воркере
+def when_ready(server):
+    _start_background_bot_thread()
+
+
+if __name__ == "__main__":
+    # Локальный запуск
+    _start_background_bot_thread()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
