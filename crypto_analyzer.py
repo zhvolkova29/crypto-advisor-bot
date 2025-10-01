@@ -6,29 +6,42 @@ from config import COINGECKO_API_KEY, MIN_MARKET_CAP, MIN_VOLUME_24H, MAX_PRICE_
 class CryptoAnalyzer:
     def __init__(self):
         self.base_url = "https://api.coingecko.com/api/v3"
-        self.headers = {}
+        self.headers = {
+            # CoinGecko иногда требует User-Agent
+            'User-Agent': 'CryptoAdvisorBot/1.0 (+https://github.com/)'
+        }
         if COINGECKO_API_KEY:
             self.headers['X-CG-API-KEY'] = COINGECKO_API_KEY
     
-    def get_top_cryptocurrencies(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_top_cryptocurrencies(self, limit: int = 250) -> List[Dict[str, Any]]:
         """
         Получает топ криптовалют с базовой информацией
         """
         try:
             url = f"{self.base_url}/coins/markets"
-            params = {
-                'vs_currency': 'usd',
-                'order': 'market_cap_desc',
-                'per_page': limit,
-                'page': 1,
-                'sparkline': False,
-                'price_change_percentage': '24h,7d'
-            }
-            
-            response = requests.get(url, params=params, headers=self.headers)
-            response.raise_for_status()
-            
-            return response.json()
+            all_rows: List[Dict[str, Any]] = []
+            # CoinGecko per_page максимум 250. Соберем 2 страницы для надежности (до 500 монет)
+            pages = 2 if limit > 250 else 1
+            per_page = 250 if limit > 250 else limit
+            for page in range(1, pages + 1):
+                params = {
+                    'vs_currency': 'usd',
+                    'order': 'market_cap_desc',
+                    'per_page': per_page,
+                    'page': page,
+                    'sparkline': False,
+                    'price_change_percentage': '24h,7d'
+                }
+                response = requests.get(url, params=params, headers=self.headers, timeout=20)
+                if response.status_code != 200:
+                    print(f"CoinGecko HTTP {response.status_code}: {response.text[:200]}")
+                    continue
+                rows = response.json()
+                if not isinstance(rows, list):
+                    print(f"Неожиданный ответ CoinGecko: {rows}")
+                    continue
+                all_rows.extend(rows)
+            return all_rows
         except Exception as e:
             print(f"Ошибка при получении данных: {e}")
             return []
@@ -56,7 +69,8 @@ class CryptoAnalyzer:
                         'market_cap': coin.get('market_cap', 0),
                         'volume_24h': coin.get('total_volume', 0),
                         'price_change_24h': coin.get('price_change_percentage_24h', 0),
-                        'price_change_7d': coin.get('price_change_percentage_7d', 0),
+                        # CoinGecko возвращает 7д как price_change_percentage_7d_in_currency
+                        'price_change_7d': coin.get('price_change_percentage_7d_in_currency', coin.get('price_change_percentage_7d', 0) or 0),
                         'market_cap_rank': coin.get('market_cap_rank', 0),
                         'image': coin.get('image', '')
                     }
@@ -126,6 +140,32 @@ class CryptoAnalyzer:
         # Сортируем по оценке инвестирования (по убыванию)
         suitable_coins.sort(key=lambda x: x.get('investment_score', 0), reverse=True)
         
+        # Если после фильтра пусто — попробуем запасной легкий фильтр, чтобы не присылать пустое
+        if not suitable_coins:
+            fallback: List[Dict[str, Any]] = []
+            # Возьмем монеты до $5 с объемом > $5M
+            cryptocurrencies = self.get_top_cryptocurrencies(limit=500)
+            for coin in cryptocurrencies:
+                try:
+                    if coin.get('current_price', 0) <= MAX_PRICE_PER_COIN and coin.get('total_volume', 0) >= 5_000_000:
+                        fallback.append({
+                            'id': coin.get('id'),
+                            'symbol': coin.get('symbol', '').upper(),
+                            'name': coin.get('name'),
+                            'current_price': coin.get('current_price', 0),
+                            'market_cap': coin.get('market_cap', 0),
+                            'volume_24h': coin.get('total_volume', 0),
+                            'price_change_24h': coin.get('price_change_percentage_24h', coin.get('price_change_percentage_24h_in_currency', 0) or 0),
+                            'price_change_7d': coin.get('price_change_percentage_7d_in_currency', 0),
+                            'market_cap_rank': coin.get('market_cap_rank', 0),
+                            'image': coin.get('image', ''),
+                            'investment_score': 0.0,
+                        })
+                except Exception:
+                    continue
+            fallback.sort(key=lambda x: (x.get('market_cap_rank') or 10_000))
+            return fallback[:3]
+
         # Возвращаем топ-3
         return suitable_coins[:3]
     
