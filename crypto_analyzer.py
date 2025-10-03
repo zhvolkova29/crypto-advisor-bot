@@ -296,11 +296,17 @@ class CryptoAnalyzer:
         """
         Возвращает топ-3 рекомендации для покупки
         """
+        print("🚀 Начинаем получение рекомендаций...")
+        
         # Получаем топ криптовалют
         cryptocurrencies = self.get_top_cryptocurrencies(limit=200)
         
+        print(f"📊 Получено {len(cryptocurrencies) if cryptocurrencies else 0} криптовалют")
+        
         # Фильтруем подходящие
         suitable_coins = self.filter_suitable_cryptocurrencies(cryptocurrencies)
+        
+        print(f"✅ Найдено {len(suitable_coins) if suitable_coins else 0} подходящих монет")
         
         # Рассчитываем оценки и сортируем
         for coin in suitable_coins:
@@ -335,7 +341,9 @@ class CryptoAnalyzer:
             return fallback[:3]
 
         # Возвращаем топ-3
-        return suitable_coins[:3]
+        result = suitable_coins[:3]
+        print(f"🏆 Возвращаем {len(result)} рекомендаций")
+        return result
     
     def get_coin_description(self, coin: Dict[str, Any]) -> str:
         """
