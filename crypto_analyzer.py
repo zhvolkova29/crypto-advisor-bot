@@ -1,6 +1,9 @@
 import requests
 import json
 from typing import List, Dict, Any
+import time
+import os
+import hashlib
 from config import COINGECKO_API_KEY, MIN_MARKET_CAP, MIN_VOLUME_24H, MAX_PRICE_PER_COIN
 
 class CryptoAnalyzer:
@@ -13,38 +16,171 @@ class CryptoAnalyzer:
         if COINGECKO_API_KEY:
             self.headers['X-CG-API-KEY'] = COINGECKO_API_KEY
     
-    def get_top_cryptocurrencies(self, limit: int = 250) -> List[Dict[str, Any]]:
+    def _cache_path(self, key: str) -> str:
+        digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
+        return os.path.join('/tmp', f'coingecko_cache_{digest}.json')
+
+    def _read_cache(self, key: str, ttl_seconds: int = 900) -> List[Dict[str, Any]]:
+        try:
+            path = self._cache_path(key)
+            if not os.path.exists(path):
+                return []
+            # TTL check
+            if time.time() - os.path.getmtime(path) > ttl_seconds:
+                return []
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _write_cache(self, key: str, data: List[Dict[str, Any]]) -> None:
+        try:
+            path = self._cache_path(key)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+
+    def get_top_cryptocurrencies(self, limit: int = 150) -> List[Dict[str, Any]]:
         """
         Получает топ криптовалют с базовой информацией
         """
+        # Пробуем CoinGecko
+        cg_data = self._try_coingecko(limit)
+        if cg_data:
+            return cg_data
+        
+        # Если CoinGecko не работает, пробуем альтернативный источник
+        print("CoinGecko недоступен, используем альтернативный источник...")
+        return self._try_alternative_source(limit)
+    
+    def _try_coingecko(self, limit: int) -> List[Dict[str, Any]]:
+        """Пробует получить данные с CoinGecko"""
         try:
             url = f"{self.base_url}/coins/markets"
-            all_rows: List[Dict[str, Any]] = []
-            # CoinGecko per_page максимум 250. Соберем 2 страницы для надежности (до 500 монет)
-            pages = 2 if limit > 250 else 1
-            per_page = 250 if limit > 250 else limit
-            for page in range(1, pages + 1):
-                params = {
-                    'vs_currency': 'usd',
-                    'order': 'market_cap_desc',
-                    'per_page': per_page,
-                    'page': page,
-                    'sparkline': False,
-                    'price_change_percentage': '24h,7d'
-                }
-                response = requests.get(url, params=params, headers=self.headers, timeout=20)
-                if response.status_code != 200:
-                    print(f"CoinGecko HTTP {response.status_code}: {response.text[:200]}")
-                    continue
-                rows = response.json()
-                if not isinstance(rows, list):
-                    print(f"Неожиданный ответ CoinGecko: {rows}")
-                    continue
-                all_rows.extend(rows)
-            return all_rows
-        except Exception as e:
-            print(f"Ошибка при получении данных: {e}")
+            params = {
+                'vs_currency': 'usd',
+                'order': 'market_cap_desc',
+                'per_page': min(250, limit),
+                'page': 1,
+                'sparkline': False,
+                'price_change_percentage': '24h,7d'
+            }
+
+            cache_key = f"coins_markets_{params['vs_currency']}_{params['per_page']}_{params['page']}"
+            cached = self._read_cache(cache_key)
+            if cached:
+                return cached
+
+            max_retries = 2  # Уменьшили количество попыток
+            backoff = 5
+            for attempt in range(max_retries):
+                response = requests.get(url, params=params, headers=self.headers, timeout=15)
+                if response.status_code == 200:
+                    rows = response.json()
+                    if isinstance(rows, list) and rows:
+                        self._write_cache(cache_key, rows)
+                        return rows
+                    return []
+                
+                if response.status_code == 429:
+                    print(f"CoinGecko 429. Skipping to alternative source.")
+                    return []
+                
+                print(f"CoinGecko HTTP {response.status_code}: {response.text[:100]}")
+                time.sleep(backoff)
+
             return []
+        except Exception as e:
+            print(f"CoinGecko error: {e}")
+            return []
+    
+    def _try_alternative_source(self, limit: int) -> List[Dict[str, Any]]:
+        """Альтернативный источник данных - CoinCap API"""
+        try:
+            # Используем CoinCap API (бесплатный, без лимитов)
+            url = "https://api.coincap.io/v2/assets"
+            params = {
+                'limit': min(200, limit),
+                'offset': 0
+            }
+            
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                assets = data.get('data', [])
+                
+                # Конвертируем формат CoinCap в формат CoinGecko
+                converted = []
+                for asset in assets:
+                    try:
+                        converted.append({
+                            'id': asset.get('id', '').lower(),
+                            'symbol': asset.get('symbol', '').upper(),
+                            'name': asset.get('name', ''),
+                            'current_price': float(asset.get('priceUsd', 0)),
+                            'market_cap': float(asset.get('marketCapUsd', 0)),
+                            'total_volume': float(asset.get('volumeUsd24Hr', 0)),
+                            'price_change_percentage_24h': float(asset.get('changePercent24Hr', 0)),
+                            'price_change_percentage_7d': 0,  # CoinCap не предоставляет 7d
+                            'market_cap_rank': int(asset.get('rank', 999999)),
+                            'image': f"https://assets.coincap.io/assets/icons/{asset.get('symbol', '').lower()}@2x.png"
+                        })
+                    except (ValueError, TypeError):
+                        continue
+                
+                print(f"Получено {len(converted)} монет с CoinCap")
+                return converted
+            else:
+                print(f"CoinCap HTTP {response.status_code}")
+                return []
+                
+        except Exception as e:
+            print(f"CoinCap error: {e}")
+            # Последний резерв - статические данные
+            return self._get_fallback_data()
+    
+    def _get_fallback_data(self) -> List[Dict[str, Any]]:
+        """Резервные данные, если все API недоступны"""
+        print("Используем резервные данные")
+        return [
+            {
+                'id': 'bitcoin',
+                'symbol': 'BTC',
+                'name': 'Bitcoin',
+                'current_price': 50000.0,
+                'market_cap': 1000000000000,
+                'total_volume': 25000000000,
+                'price_change_percentage_24h': 2.5,
+                'price_change_percentage_7d': 5.0,
+                'market_cap_rank': 1,
+                'image': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png'
+            },
+            {
+                'id': 'ethereum',
+                'symbol': 'ETH',
+                'name': 'Ethereum',
+                'current_price': 3000.0,
+                'market_cap': 360000000000,
+                'total_volume': 15000000000,
+                'price_change_percentage_24h': 1.8,
+                'price_change_percentage_7d': 3.2,
+                'market_cap_rank': 2,
+                'image': 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+            },
+            {
+                'id': 'binancecoin',
+                'symbol': 'BNB',
+                'name': 'BNB',
+                'current_price': 400.0,
+                'market_cap': 60000000000,
+                'total_volume': 2000000000,
+                'price_change_percentage_24h': 0.5,
+                'price_change_percentage_7d': 1.2,
+                'market_cap_rank': 3,
+                'image': 'https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png'
+            }
+        ]
     
     def filter_suitable_cryptocurrencies(self, cryptocurrencies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -79,6 +215,39 @@ class CryptoAnalyzer:
             except Exception as e:
                 print(f"Ошибка при обработке монеты {coin.get('name', 'Unknown')}: {e}")
                 continue
+        
+        # Если подходящих монет мало, ослабляем критерии
+        if len(suitable_coins) < 3:
+            print(f"Строгие критерии дали {len(suitable_coins)} монет, ослабляем...")
+            suitable_coins = []
+            
+            for coin in cryptocurrencies:
+                try:
+                    # Ослабленные критерии
+                    if (coin.get('current_price', 0) <= 5.0 and  # До $5
+                        coin.get('current_price', 0) > 0.001 and  # Минимум 0.1 цент
+                        coin.get('total_volume', 0) >= 5000000):  # Объем от $5M
+                        
+                        coin_info = {
+                            'id': coin.get('id'),
+                            'symbol': coin.get('symbol', '').upper(),
+                            'name': coin.get('name'),
+                            'current_price': coin.get('current_price', 0),
+                            'market_cap': coin.get('market_cap', 0),
+                            'volume_24h': coin.get('total_volume', 0),
+                            'price_change_24h': coin.get('price_change_percentage_24h', 0),
+                            'price_change_7d': coin.get('price_change_percentage_7d_in_currency', coin.get('price_change_percentage_7d', 0) or 0),
+                            'market_cap_rank': coin.get('market_cap_rank', 0),
+                            'image': coin.get('image', '')
+                        }
+                        
+                        suitable_coins.append(coin_info)
+                except Exception as e:
+                    print(f"Ошибка при обработке монеты {coin.get('name', 'Unknown')}: {e}")
+                    continue
+            
+            # Сортируем по рангу (лучшие монеты)
+            suitable_coins.sort(key=lambda x: x.get('market_cap_rank', 999999))
         
         return suitable_coins
     
@@ -140,11 +309,10 @@ class CryptoAnalyzer:
         # Сортируем по оценке инвестирования (по убыванию)
         suitable_coins.sort(key=lambda x: x.get('investment_score', 0), reverse=True)
         
-        # Если после фильтра пусто — попробуем запасной легкий фильтр, чтобы не присылать пустое
+        # Если после фильтра пусто — сформируем fallback из уже полученных данных,
+        # чтобы не делать повторный вызов API и не ловить 429.
         if not suitable_coins:
             fallback: List[Dict[str, Any]] = []
-            # Возьмем монеты до $5 с объемом > $5M
-            cryptocurrencies = self.get_top_cryptocurrencies(limit=500)
             for coin in cryptocurrencies:
                 try:
                     if coin.get('current_price', 0) <= MAX_PRICE_PER_COIN and coin.get('total_volume', 0) >= 5_000_000:
