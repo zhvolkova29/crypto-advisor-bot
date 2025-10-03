@@ -186,6 +186,51 @@ def send_recommendations():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
+@app.route('/test-crypto')
+def test_crypto():
+    """Тестирование получения криптовалют"""
+    try:
+        from crypto_analyzer import CryptoAnalyzer
+        analyzer = CryptoAnalyzer()
+        
+        # Тестируем получение данных
+        print("🧪 Тестируем получение криптовалют...")
+        coins = analyzer.get_top_cryptocurrencies(50)
+        print(f"Получено монет: {len(coins) if coins else 0}")
+        
+        if coins:
+            suitable = analyzer.filter_suitable_cryptocurrencies(coins)
+            print(f"Подходящих монет: {len(suitable) if suitable else 0}")
+            
+            if suitable:
+                top_3 = analyzer.get_top_3_recommendations()
+                print(f"Топ-3 рекомендаций: {len(top_3) if top_3 else 0}")
+                
+                return jsonify({
+                    "message": "Crypto test completed",
+                    "coins_found": len(coins) if coins else 0,
+                    "suitable_found": len(suitable) if suitable else 0,
+                    "recommendations": len(top_3) if top_3 else 0,
+                    "status": "success"
+                })
+            else:
+                return jsonify({
+                    "message": "No suitable coins found",
+                    "coins_found": len(coins) if coins else 0,
+                    "status": "warning"
+                })
+        else:
+            return jsonify({
+                "message": "No coins retrieved",
+                "status": "error"
+            })
+            
+    except Exception as e:
+        print(f"❌ Ошибка в тесте: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Test error: {str(e)}", "status": "error"})
+
 # Запускаем бота в фоне
 async def start_bot():
     """Запускает бота"""
