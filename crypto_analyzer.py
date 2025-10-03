@@ -96,89 +96,114 @@ class CryptoAnalyzer:
             return []
     
     def _try_alternative_source(self, limit: int) -> List[Dict[str, Any]]:
-        """Альтернативный источник данных - CoinCap API"""
+        """Альтернативный источник данных"""
+        # Пробуем CoinPaprika API
         try:
-            # Используем CoinCap API (бесплатный, без лимитов)
-            url = "https://api.coincap.io/v2/assets"
+            print("Пробуем CoinPaprika API...")
+            url = "https://api.coinpaprika.com/v1/tickers"
             params = {
-                'limit': min(200, limit),
-                'offset': 0
+                'quotes': 'USD',
+                'limit': min(100, limit)
             }
             
             response = requests.get(url, params=params, timeout=15)
             if response.status_code == 200:
                 data = response.json()
-                assets = data.get('data', [])
                 
-                # Конвертируем формат CoinCap в формат CoinGecko
                 converted = []
-                for asset in assets:
+                for coin in data:
                     try:
+                        quotes = coin.get('quotes', {}).get('USD', {})
                         converted.append({
-                            'id': asset.get('id', '').lower(),
-                            'symbol': asset.get('symbol', '').upper(),
-                            'name': asset.get('name', ''),
-                            'current_price': float(asset.get('priceUsd', 0)),
-                            'market_cap': float(asset.get('marketCapUsd', 0)),
-                            'total_volume': float(asset.get('volumeUsd24Hr', 0)),
-                            'price_change_percentage_24h': float(asset.get('changePercent24Hr', 0)),
-                            'price_change_percentage_7d': 0,  # CoinCap не предоставляет 7d
-                            'market_cap_rank': int(asset.get('rank', 999999)),
-                            'image': f"https://assets.coincap.io/assets/icons/{asset.get('symbol', '').lower()}@2x.png"
+                            'id': coin.get('id', '').lower(),
+                            'symbol': coin.get('symbol', '').upper(),
+                            'name': coin.get('name', ''),
+                            'current_price': float(quotes.get('price', 0)),
+                            'market_cap': float(quotes.get('market_cap', 0)),
+                            'total_volume': float(quotes.get('volume_24h', 0)),
+                            'price_change_percentage_24h': float(quotes.get('percent_change_24h', 0)),
+                            'price_change_percentage_7d': float(quotes.get('percent_change_7d', 0)),
+                            'market_cap_rank': int(coin.get('rank', 999999)),
+                            'image': f"https://static.coinpaprika.com/coin/{coin.get('id', '')}/logo.png"
                         })
                     except (ValueError, TypeError):
                         continue
                 
-                print(f"Получено {len(converted)} монет с CoinCap")
+                print(f"Получено {len(converted)} монет с CoinPaprika")
                 return converted
             else:
-                print(f"CoinCap HTTP {response.status_code}")
-                return []
+                print(f"CoinPaprika HTTP {response.status_code}")
                 
         except Exception as e:
-            print(f"CoinCap error: {e}")
-            # Последний резерв - статические данные
-            return self._get_fallback_data()
+            print(f"CoinPaprika error: {e}")
+        
+        # Если CoinPaprika не работает, используем резервные данные
+        print("Используем резервные данные...")
+        return self._get_fallback_data()
     
     def _get_fallback_data(self) -> List[Dict[str, Any]]:
         """Резервные данные, если все API недоступны"""
         print("Используем резервные данные")
         return [
             {
-                'id': 'bitcoin',
-                'symbol': 'BTC',
-                'name': 'Bitcoin',
-                'current_price': 50000.0,
-                'market_cap': 1000000000000,
-                'total_volume': 25000000000,
-                'price_change_percentage_24h': 2.5,
-                'price_change_percentage_7d': 5.0,
-                'market_cap_rank': 1,
-                'image': 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png'
+                'id': 'chainlink',
+                'symbol': 'LINK',
+                'name': 'Chainlink',
+                'current_price': 8.50,
+                'market_cap': 50000000000,
+                'total_volume': 800000000,
+                'price_change_percentage_24h': 2.1,
+                'price_change_percentage_7d': 4.5,
+                'market_cap_rank': 15,
+                'image': 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png'
             },
             {
-                'id': 'ethereum',
-                'symbol': 'ETH',
-                'name': 'Ethereum',
-                'current_price': 3000.0,
-                'market_cap': 360000000000,
-                'total_volume': 15000000000,
-                'price_change_percentage_24h': 1.8,
-                'price_change_percentage_7d': 3.2,
-                'market_cap_rank': 2,
-                'image': 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+                'id': 'polygon',
+                'symbol': 'MATIC',
+                'name': 'Polygon',
+                'current_price': 0.65,
+                'market_cap': 6500000000,
+                'total_volume': 150000000,
+                'price_change_percentage_24h': 1.2,
+                'price_change_percentage_7d': 3.8,
+                'market_cap_rank': 18,
+                'image': 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png'
             },
             {
-                'id': 'binancecoin',
-                'symbol': 'BNB',
-                'name': 'BNB',
-                'current_price': 400.0,
-                'market_cap': 60000000000,
-                'total_volume': 2000000000,
-                'price_change_percentage_24h': 0.5,
-                'price_change_percentage_7d': 1.2,
-                'market_cap_rank': 3,
-                'image': 'https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png'
+                'id': 'solana',
+                'symbol': 'SOL',
+                'name': 'Solana',
+                'current_price': 95.0,
+                'market_cap': 42000000000,
+                'total_volume': 1200000000,
+                'price_change_percentage_24h': 0.8,
+                'price_change_percentage_7d': 2.1,
+                'market_cap_rank': 6,
+                'image': 'https://assets.coingecko.com/coins/images/4128/large/solana.png'
+            },
+            {
+                'id': 'cardano',
+                'symbol': 'ADA',
+                'name': 'Cardano',
+                'current_price': 0.45,
+                'market_cap': 16000000000,
+                'total_volume': 300000000,
+                'price_change_percentage_24h': 1.5,
+                'price_change_percentage_7d': 2.9,
+                'market_cap_rank': 9,
+                'image': 'https://assets.coingecko.com/coins/images/975/large/cardano.png'
+            },
+            {
+                'id': 'avalanche-2',
+                'symbol': 'AVAX',
+                'name': 'Avalanche',
+                'current_price': 12.5,
+                'market_cap': 4500000000,
+                'total_volume': 180000000,
+                'price_change_percentage_24h': 0.9,
+                'price_change_percentage_7d': 1.7,
+                'market_cap_rank': 20,
+                'image': 'https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png'
             }
         ]
     

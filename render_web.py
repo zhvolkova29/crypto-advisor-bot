@@ -181,7 +181,17 @@ def health():
 def send_recommendations():
     """Отправляет рекомендации по запросу"""
     try:
-        asyncio.run(crypto_bot.send_daily_recommendations())
+        # Запускаем в отдельном потоке, чтобы избежать проблем с event loop
+        def send_async():
+            try:
+                asyncio.run(crypto_bot.send_daily_recommendations())
+            except Exception as e:
+                print(f"Ошибка в send_async: {e}")
+        
+        thread = threading.Thread(target=send_async)
+        thread.daemon = True
+        thread.start()
+        
         return jsonify({"status": "success", "message": "Recommendations sent"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
