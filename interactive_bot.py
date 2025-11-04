@@ -334,14 +334,32 @@ async def main():
         
         print("🤖 Интерактивный бот-советник запущен!")
         print("📱 Бот готов к работе. Используйте /start для начала работы.")
+        print("🔄 Инициализируем приложение...")
+        
+        # Инициализируем и запускаем приложение
+        await application.initialize()
+        await application.start()
+        
         print("🔄 Запускаем polling...")
         
-        # Запускаем бота
-        await application.run_polling(
-            allowed_updates=Update.ALL_TYPES, 
-            drop_pending_updates=True,
-            close_loop=False
+        # Запускаем updater
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
         )
+        
+        print("✅ Polling запущен, бот готов принимать сообщения!")
+        
+        # Ожидаем бесконечно
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print("⏹️ Остановка бота...")
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
     except Exception as e:
         print(f"❌ Критическая ошибка при запуске бота: {e}")
         import traceback
