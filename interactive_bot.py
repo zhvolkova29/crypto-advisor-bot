@@ -313,24 +313,40 @@ class InvestmentAdvisorBot:
 
 async def main():
     """Основная функция запуска бота"""
-    if not TELEGRAM_BOT_TOKEN:
-        print("❌ Ошибка: Не указан TELEGRAM_BOT_TOKEN в .env файле")
-        return
-    
-    bot = InvestmentAdvisorBot()
-    
-    # Создаем приложение
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", bot.start_command))
-    application.add_handler(CallbackQueryHandler(bot.button_callback))
-    
-    print("🤖 Интерактивный бот-советник запущен!")
-    print("📱 Бот готов к работе. Используйте /start для начала работы.")
-    
-    # Запускаем бота
-    await application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    try:
+        if not TELEGRAM_BOT_TOKEN:
+            print("❌ Ошибка: Не указан TELEGRAM_BOT_TOKEN в .env файле")
+            return
+        
+        print(f"🔑 Токен получен: {TELEGRAM_BOT_TOKEN[:20]}...")
+        
+        bot = InvestmentAdvisorBot()
+        print("✅ Объект бота создан")
+        
+        # Создаем приложение
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        print("✅ Приложение создано")
+        
+        # Добавляем обработчики
+        application.add_handler(CommandHandler("start", bot.start_command))
+        application.add_handler(CallbackQueryHandler(bot.button_callback))
+        print("✅ Обработчики добавлены")
+        
+        print("🤖 Интерактивный бот-советник запущен!")
+        print("📱 Бот готов к работе. Используйте /start для начала работы.")
+        print("🔄 Запускаем polling...")
+        
+        # Запускаем бота
+        await application.run_polling(
+            allowed_updates=Update.ALL_TYPES, 
+            drop_pending_updates=True,
+            close_loop=False
+        )
+    except Exception as e:
+        print(f"❌ Критическая ошибка при запуске бота: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
