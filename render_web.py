@@ -13,21 +13,17 @@ from interactive_bot import InvestmentAdvisorBot, main as bot_main
 # Создаем Flask приложение для Render
 app = Flask(__name__)
 
-# Flask маршруты
-@app.route('/')
-def home():
-    return jsonify({
-        "status": "Investment Advisor Bot is running",
-        "time": datetime.now().isoformat(),
-        "message": "Bot is active and ready for user interactions"
-    })
+# Флаг для отслеживания запуска бота
+bot_started = False
+bot_thread = None
 
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy"})
-
-def _start_background_bot_thread():
-    """Запуск фонового потока с event loop (совместимо с gunicorn)."""
+def start_bot():
+    """Запуск бота в отдельном потоке"""
+    global bot_started, bot_thread
+    
+    if bot_started:
+        return
+    
     def run_bot():
         try:
             print("🚀 Запуск интерактивного бота...")
@@ -36,23 +32,40 @@ def _start_background_bot_thread():
             print(f"❌ Ошибка запуска бота: {e}")
             import traceback
             traceback.print_exc()
+            # Пытаемся перезапустить через 5 секунд
+            threading.Timer(5.0, run_bot).start()
 
-    thread = threading.Thread(target=run_bot, daemon=True)
-    thread.start()
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    bot_started = True
     print("✅ Бот запущен в фоновом потоке")
 
+# Flask маршруты
+@app.route('/')
+def home():
+    # Запускаем бота при первом запросе
+    if not bot_started:
+        start_bot()
+    
+    return jsonify({
+        "status": "Investment Advisor Bot is running",
+        "time": datetime.now().isoformat(),
+        "message": "Bot is active and ready for user interactions",
+        "bot_started": bot_started
+    })
 
-# Gunicorn хук: вызывается при инициализации приложения в воркере
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy", "bot_started": bot_started})
+
+# Gunicorn хук
 def when_ready(server):
     print("🔄 Gunicorn готов, запускаем бота...")
-    _start_background_bot_thread()
+    start_bot()
 
-# Также запускаем при импорте модуля (для совместимости)
-_start_background_bot_thread()
-
+# Запускаем бота при импорте модуля
+start_bot()
 
 if __name__ == "__main__":
-    # Локальный запуск
-    _start_background_bot_thread()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
