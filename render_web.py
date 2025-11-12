@@ -89,22 +89,27 @@ def run_bot_loop():
         asyncio.set_event_loop(bot_loop)
         logger.info("✅ Event loop создан")
         
-        logger.info("🔄 Запуск задачи инициализации...")
-        # Создаем задачу для инициализации
-        task = bot_loop.create_task(initialize_bot_async())
+        logger.info("🔄 Создание задачи инициализации...")
+        # Создаем задачу для инициализации (она выполнится внутри run_forever)
+        init_task = bot_loop.create_task(initialize_bot_async())
         logger.info("✅ Задача инициализации создана")
         
         # Запускаем event loop навсегда
+        # Задача инициализации выполнится внутри run_forever
         logger.info("🔄 Запуск event loop навсегда...")
         bot_loop.run_forever()
     except Exception as e:
         logger.error(f"❌ Ошибка в event loop: {e}")
         import traceback
         traceback.print_exc()
+        init_event.set()  # Сигнализируем о завершении (даже с ошибкой)
     finally:
         if bot_loop and not bot_loop.is_closed():
             logger.info("🔄 Закрытие event loop...")
-            bot_loop.close()
+            try:
+                bot_loop.close()
+            except:
+                pass
 
 def start_bot_thread():
     """Запускает поток для бота"""
